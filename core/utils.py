@@ -216,7 +216,7 @@ class NNDataset(Dataset):
         self.dmap = {}
 
     def load_index(self, map_id, file_id, file):
-        raise NotImplementedError('Must be implemented by child class.')
+        self.indices.append([map_id, file_id, file])
 
     def load_indices(self, map_id, files, **kw):
         for file_id, file in enumerate(files, 1):

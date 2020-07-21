@@ -58,11 +58,15 @@ class DiskExcNet(nn.Module):
         self.c9 = MXPConv2d(4 * r, 8 * r, kernel_size=3, padding=1)
         self.c10 = MXPConv2d(8 * r, 16 * r, kernel_size=3, padding=1)
 
-        self.c11 = UpConv2d(24 * r, 16 * r, kernel_size=2, stride=2, padding=0)
-        self.c12 = UpConv2d(16 * r, 8 * r, kernel_size=2, stride=2, padding=0)
-        self.c13 = UpConv2d(8 * r, 4 * r, kernel_size=2, stride=2, padding=0)
+        self.c11 = MXPConv2d(24 * r, 8 * r, kernel_size=3, padding=1)
+        self.c12 = MXPConv2d(8 * r, 4 * r, kernel_size=3, padding=1)
+        self.c13 = MXPConv2d(4 * r, 2 * r, kernel_size=3, padding=1)
+        self.c14 = MXPConv2d(2 * r, r, kernel_size=3, padding=1)
 
-        self.out = nn.Conv2d(4 * r, num_class, kernel_size=1)
+        self.fc0 = nn.Linear(r * 3 * 2, 512)
+        self.fc1 = nn.Linear(512, 256)
+        self.fc2 = nn.Linear(256, 64)
+        self.fc_multi = nn.Linear(64, 3 * num_class)
 
     def forward(self, x):
         x1 = self.c1(x)
@@ -82,5 +86,8 @@ class DiskExcNet(nn.Module):
         x = self.c12(x)
         x = self.c13(x)
 
-        return self.out(x)
 
+        x = x.view(x.size(0), -1)
+        fc = self.fc0(x)
+        fc = self.fc1(x)
+        fc = self.fc2(x)

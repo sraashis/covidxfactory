@@ -17,7 +17,7 @@ import core.utils as tu
 from classification import KernelDataset
 import json
 
-RUNS = [runs.DRIVE]
+RUNS = [runs.V7CF_DATASET]
 if __name__ == "__main__":
     params = get_args()
     for run in RUNS:

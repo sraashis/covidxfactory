@@ -13,6 +13,8 @@ from core.imageutils import Image
 from core.measurements import new_metrics, Avg
 from core.utils import NNDataset
 from models import DiskExcNet
+import json
+import cv2
 
 sep = os.sep
 
@@ -22,35 +24,41 @@ class KernelDataset(NNDataset):
         super().__init__(**kw)
         self.get_label = kw.get('label_getter')
         self.get_mask = kw.get('mask_getter')
+        self.labels = None
 
     def load_index(self, map_id, file_id, file):
-        self.indices.append([map_id, file_id, file])
+        if not self.labels:
+            lbl = self.dmap[map_id]['label_dir'] + sep + os.listdir(self.dmap[map_id]['label_dir'])[0]
+            self.labels = json.loads(open(lbl).read())
+        _file = file.split('.')[0] + '.png'
+        self.indices.append([map_id, file_id, _file, self.labels[file]])
 
     def __getitem__(self, index):
-        map_id, file_id, file = self.indices[index]
+        map_id, file_id, file, labels = self.indices[index]
         dt = self.dmap[map_id]
 
         img_obj = Image()
         img_obj.load(dt['data_dir'], file)
-        img_obj.load_ground_truth(dt['label_dir'], dt['label_getter'])
+        img_obj.load_mask(dt['mask_dir'], dt['mask_getter'])
         img_obj.apply_clahe()
+
+        if len(img_obj.array.shape) == 3:
+            img_obj.array = img_obj.array[:, :, 0]
+
+        num, comp, stats, centriod = cv2.connectedComponentsWithStats(img_obj.mask)
+        crop = np.zeros((2, 480, 256), dtype=np.uint8)
+        for i, (a, b, c, d, _) in enumerate(stats[1:]):
+            img_obj.array[img_obj.mask == 0] = 0
+            crop[i] = np.array(IMG.fromarray(img_obj.array).crop([a, b, a + c, b + d]).resize((256, 480)))
+
+        tensor = crop / 255.0
         if self.mode == 'train' and random.uniform(0, 1) <= 0.5:
-            img_obj.array = np.flip(img_obj.array, 0)
-            img_obj.ground_truth = np.flip(img_obj.ground_truth, 0)
+            tensor = np.flip(tensor, 0)
 
         if self.mode == 'train' and random.uniform(0, 1) <= 0.5:
-            img_obj.array = np.flip(img_obj.array, 1)
-            img_obj.ground_truth = np.flip(img_obj.ground_truth, 1)
+            tensor = np.flip(tensor, 1)
 
-        img_tensor = self.transforms(IMG.fromarray(img_obj.array))
-
-        gt = img_obj.ground_truth
-        if len(gt.shape) > 2:
-            gt = gt[:, :, 0]
-
-        gt = self.transforms(IMG.fromarray(gt))
-        gt[gt == 255] = 1
-        return {'indices': self.indices[index], 'input': img_tensor, 'label': gt.squeeze()}
+        return {'indices': self.indices[index], 'input': tensor.copy(), 'label': labels}
 
     @property
     def transforms(self):

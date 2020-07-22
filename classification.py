@@ -12,7 +12,7 @@ import core.nn
 from core.imageutils import Image
 from core.measurements import new_metrics, Avg
 from core.utils import NNDataset
-from models import DiskExcNet
+from models import get_model
 import json
 import cv2
 
@@ -31,7 +31,8 @@ class KernelDataset(NNDataset):
             lbl = self.dmap[map_id]['label_dir'] + sep + os.listdir(self.dmap[map_id]['label_dir'])[0]
             self.labels = json.loads(open(lbl).read())
         _file = file.split('.')[0] + '.png'
-        self.indices.append([map_id, file_id, _file, self.labels[file]])
+        h, p, c, r = self.labels[file]
+        self.indices.append([map_id, file_id, _file, [1 - h, p, c, r]])
 
     def __getitem__(self, index):
         map_id, file_id, file, labels = self.indices[index]
@@ -46,10 +47,10 @@ class KernelDataset(NNDataset):
             img_obj.array = img_obj.array[:, :, 0]
 
         num, comp, stats, centriod = cv2.connectedComponentsWithStats(img_obj.mask)
-        crop = np.zeros((2, 480, 256), dtype=np.uint8)
+        crop = np.zeros((2, 320, 192), dtype=np.uint8)
         for i, (a, b, c, d, _) in enumerate(stats[1:]):
             img_obj.array[img_obj.mask == 0] = 0
-            crop[i] = np.array(IMG.fromarray(img_obj.array).crop([a, b, a + c, b + d]).resize((256, 480)))
+            crop[i] = np.array(IMG.fromarray(img_obj.array).crop([a, b, a + c, b + d]).resize((192, 320)))
 
         tensor = crop / 255.0
         if self.mode == 'train' and random.uniform(0, 1) <= 0.5:
@@ -57,8 +58,8 @@ class KernelDataset(NNDataset):
 
         if self.mode == 'train' and random.uniform(0, 1) <= 0.5:
             tensor = np.flip(tensor, 1)
-
-        return {'indices': self.indices[index], 'input': tensor.copy(), 'label': labels}
+        return {'indices': self.indices[index], 'input': tensor.copy(),
+                'label': np.array(labels)}
 
     @property
     def transforms(self):
@@ -88,7 +89,7 @@ def init_nn(cache, init_weights=False):
     else:
         device = torch.device("cpu")
 
-    model = DiskExcNet(cache['num_channel'], cache['num_class'], r=cache['model_scale']).to(device)
+    model = get_model(which=cache['which_model'], in_ch=2, r=cache['model_scale'])
     optim = Adam(model.parameters(), lr=cache['learning_rate'])
 
     if cache['debug']:
@@ -103,17 +104,35 @@ def init_nn(cache, init_weights=False):
     return {'device': device, 'model': model.to(device), 'optimizer': optim}
 
 
+def multi_reg(multi, reg):
+    multi = F.softmax(multi, 1)
+    l1 = (reg * multi[:, 0, :]).sum(1)
+    l2 = (reg / 2 * multi[:, 1, :]).sum(1)
+    return torch.cat([l1.unsqueeze(1), l2.unsqueeze(1)], 1)
+
+
 def iteration(cache, batch, nn):
     inputs = batch['input'].to(nn['device']).float()
     labels = batch['label'].to(nn['device']).long()
+    print(labels.shape)
+
     if nn['model'].training:
         nn['optimizer'].zero_grad()
 
-    out = nn['model'](inputs)
-    loss = F.cross_entropy(out, labels)
-    out = F.log_softmax(out, 1)
+    multi, reg = nn['model'](inputs)
+    mr = multi_reg(multi, reg)
 
-    _, pred = torch.max(out, 1)
+    reg_loss = F.l1_loss(reg.squeeze(), labels[:, 3:].squeeze())
+
+    print(multi.shape, labels[:, 0:3].shape)
+    multi_loss = F.cross_entropy(multi, labels[:, 0:3])
+    mr_loss = F.cross_entropy(mr, labels[:, 2:3])
+
+    loss = torch.mean(reg_loss + multi_loss + mr_loss)
+    print(loss)
+
+    out = F.softmax(mr, 1)
+    _, pred = torch.max(F.softmax(out, 1), 1)
     sc = new_metrics(cache['num_class'])
     sc.add(pred, labels)
 

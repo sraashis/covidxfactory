@@ -41,8 +41,40 @@ class UpConv2d(nn.Module):
         return self.conv(x)
 
 
+class MultiLabelModule(nn.Module):
+    def __init__(self, in_size):
+        super().__init__()
+        self.fc0m = nn.Linear(in_size, 512)
+        self.fc1m = nn.Linear(512, 256)
+        self.fc2m = nn.Linear(256, 64)
+        self.fc3m = nn.Linear(64, 6)
+
+    def forward(self, x):
+        fc_m = F.relu(self.fc0m(x))
+        fc_m = F.relu(self.fc1m(fc_m))
+        fc_m = F.relu(self.fc2m(fc_m))
+        fc_m = self.fc3m(fc_m)
+        return fc_m.view(fc_m.shape[0], 2, -1)
+
+
+class RegressionModule(nn.Module):
+    def __init__(self, in_size):
+        super().__init__()
+        self.fc0m = nn.Linear(in_size, 512)
+        self.fc1m = nn.Linear(512, 256)
+        self.fc2m = nn.Linear(256, 64)
+        self.fc3m = nn.Linear(64, 1)
+
+    def forward(self, x):
+        fc_m = F.relu(self.fc0m(x))
+        fc_m = F.relu(self.fc1m(fc_m))
+        fc_m = F.relu(self.fc2m(fc_m))
+        fc_m = self.fc3m(fc_m)
+        return fc_m
+
+
 class DiskExcNet(nn.Module):
-    def __init__(self, in_ch, num_class, r=8):
+    def __init__(self, in_ch, r):
         super(DiskExcNet, self).__init__()
         self.c1 = BasicConv2d(in_ch, r, kernel_size=3, padding=1)
 
@@ -60,13 +92,7 @@ class DiskExcNet(nn.Module):
 
         self.c11 = MXPConv2d(24 * r, 8 * r, kernel_size=3, padding=1)
         self.c12 = MXPConv2d(8 * r, 4 * r, kernel_size=3, padding=1)
-        self.c13 = MXPConv2d(4 * r, 2 * r, kernel_size=3, padding=1)
-        self.c14 = MXPConv2d(2 * r, r, kernel_size=3, padding=1)
-
-        self.fc0 = nn.Linear(r * 3 * 2, 512)
-        self.fc1 = nn.Linear(512, 256)
-        self.fc2 = nn.Linear(256, 64)
-        self.fc_multi = nn.Linear(64, 3 * num_class)
+        self.c13 = MXPConv2d(4 * r, r, kernel_size=3, padding=1)
 
     def forward(self, x):
         x1 = self.c1(x)
@@ -86,8 +112,62 @@ class DiskExcNet(nn.Module):
         x = self.c12(x)
         x = self.c13(x)
 
+        return x.view(x.size(0), -1)
 
-        x = x.view(x.size(0), -1)
-        fc = self.fc0(x)
-        fc = self.fc1(x)
-        fc = self.fc2(x)
+
+class MultiLabel(nn.Module):
+    def __init__(self, in_ch, r=8):
+        super().__init__()
+        self.encoder = DiskExcNet(in_ch=in_ch, r=r)
+        self.multi = MultiLabelModule(r * 5 * 3)
+
+    def forward(self, x):
+        x = self.encoder(x)
+        return self.multi(x)
+
+
+class Regression(nn.Module):
+    def __init__(self, in_ch, r=8):
+        super().__init__()
+        self.encoder = DiskExcNet(in_ch=in_ch, r=r)
+        self.reg = RegressionModule(r * 5 * 3)
+
+    def forward(self, x):
+        x = self.encoder(x)
+        return self.reg(x)
+
+
+class MultiClassRegression(nn.Module):
+    def __init__(self, in_ch=2, r=8):
+        super().__init__()
+        self.encoder = DiskExcNet(in_ch=in_ch, r=r)
+        self.multi = MultiLabelModule(r * 5 * 3)
+        self.reg = RegressionModule(r * 5 * 3)
+
+    def forward(self, x):
+        x = self.encoder(x)
+        multi = self.multi(x)
+        reg = self.reg(x)
+        return multi, reg
+
+
+def get_model(which, in_ch=2, r=8):
+    if which == 'multi':
+        return MultiLabel(in_ch, r)
+    elif which == 'reg':
+        return Regression(in_ch, r)
+    elif which == 'multi_reg':
+        return MultiClassRegression(in_ch, r)
+
+#ls
+# device = torch.device('cuda')
+# m = MultiClassRegression(2, 4).to(device)
+# i = torch.randn(4, 2, 320, 192)
+
+# multi, reg = m(i.to(device))
+# multi = F.softmax(multi, 1)
+# l1 = (reg * multi[:, 0, :]).sum(1)
+# l2 = (reg / 2 * multi[:, 1, :]).sum(1)
+# l = F.softmax(torch.cat([l1.unsqueeze(1), l2.unsqueeze(1)], 1), 1)
+# print(l)
+# pass

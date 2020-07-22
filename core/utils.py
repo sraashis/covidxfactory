@@ -36,7 +36,8 @@ def get_args():
     ap.add_argument('-d', '--debug', default=True, type=boolean_string, help='Logging directory.')
     ap.add_argument('-s', '--seed', default=np.random.randint(1, 10e5), type=int, help='Seed')
     ap.add_argument('-f', '--force', default=False, type=boolean_string, help='Force')
-    ap.add_argument('-r', '--model_scale', default=32, type=int, help='Force')
+    ap.add_argument('-r', '--model_scale', default=32, type=int, help='Model width scale.')
+    ap.add_argument('-wm', '--which_model', default=32, type=str, help='Which model to load.')
     return vars(ap.parse_args())
 
 

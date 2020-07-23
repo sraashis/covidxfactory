@@ -22,7 +22,7 @@ if __name__ == "__main__":
     params = get_args()
     global_score = new_metrics(params['num_class'])
     cache = init_cache(params, experiment_id='pooled')
-    cache['log_dir'] = cache['log_dir'] + sep + 'pooled'
+    cache['log_dir'] = cache['log_dir'] + '_pooled'
     os.makedirs(cache['log_dir'], exist_ok=True)
     check_previous_logs(cache)
 
@@ -38,7 +38,7 @@ if __name__ == "__main__":
 
     core.nn.load_checkpoint(cache, nn['model'])
     test_dataset_list = KernelDataset.pool(runs=RUNS, data_dir=cache['data_dir'], split_key='test',
-                                           limit=params['load_limit'], sparse=True, debug=params['debug'])
+                                           limit=params['load_limit'], sparse=cache.get('load_sparse'), debug=params['debug'])
     test_loss, test_score = core.nn.evaluation(cache, nn, split_key='test', save_pred=True,
                                                dataset_list=test_dataset_list)
     global_score.accumulate(test_score)

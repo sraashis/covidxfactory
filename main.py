@@ -31,8 +31,7 @@ if __name__ == "__main__":
 
         global_score = new_metrics(params['num_class'])
         for split_file in os.listdir(run['split_dir']):
-            cache = init_cache(params, experiment_id=split_file.split('.')[0])
-            cache['log_dir'] = cache['log_dir'] + sep + run['data_dir'].split(sep)[1]
+            cache = init_cache(params, run, experiment_id=split_file.split('.')[0])
             os.makedirs(cache['log_dir'], exist_ok=True)
             check_previous_logs(cache)
 
@@ -50,16 +49,23 @@ if __name__ == "__main__":
                 tu.save_cache(cache)
 
             core.nn.load_checkpoint(cache, nn['model'])
+
             test_dataset_list = []
-            for f in split['test']:
-                if len(test_dataset_list) >= params['load_limit']:
-                    break
+            if cache.get('load_sparse'):
+                for f in split['test']:
+                    if len(test_dataset_list) >= params['load_limit']:
+                        break
+                    test_dataset = KernelDataset(mode='eval', limit=params['load_limit'])
+                    test_dataset.add(dataset_id=cache['experiment_id'], files=[f], debug=False, **run)
+                    test_dataset_list.append(test_dataset)
+                if params['debug']:
+                    print(f'{len(test_dataset_list)} sparse dataset loaded.')
+            else:
                 test_dataset = KernelDataset(mode='eval', limit=params['load_limit'])
-                test_dataset.add(dataset_id=cache['experiment_id'], files=[f], debug=False, **run)
+                test_dataset.add(dataset_id=cache['experiment_id'], files=split['test'], debug=params['debug'],
+                                 **run)
                 test_dataset_list.append(test_dataset)
 
-            if params['debug']:
-                print(f'{len(test_dataset_list)} sparse dataset loaded.')
             test_loss, test_score = core.nn.evaluation(cache, nn, split_key='test', save_pred=True,
                                                        dataset_list=test_dataset_list)
             global_score.accumulate(test_score)

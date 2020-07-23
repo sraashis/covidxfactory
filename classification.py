@@ -37,29 +37,31 @@ class KernelDataset(NNDataset):
     def __getitem__(self, index):
         map_id, file_id, file, labels = self.indices[index]
         dt = self.dmap[map_id]
-
         img_obj = Image()
         img_obj.load(dt['data_dir'], file)
         img_obj.load_mask(dt['mask_dir'], dt['mask_getter'])
         img_obj.apply_clahe()
 
-        if len(img_obj.array.shape) == 3:
-            img_obj.array = img_obj.array[:, :, 0]
+        try:
+            if len(img_obj.array.shape) == 3:
+                img_obj.array = img_obj.array[:, :, 0]
 
-        num, comp, stats, centriod = cv2.connectedComponentsWithStats(img_obj.mask)
-        crop = np.zeros((2, 320, 192), dtype=np.uint8)
-        for i, (a, b, c, d, _) in enumerate(stats[1:]):
-            img_obj.array[img_obj.mask == 0] = 0
-            crop[i] = np.array(IMG.fromarray(img_obj.array).crop([a, b, a + c, b + d]).resize((192, 320)))
+            num, comp, stats, centriod = cv2.connectedComponentsWithStats(img_obj.mask)
+            crop = np.zeros((2, 320, 192), dtype=np.uint8)
+            for i, (a, b, c, d, _) in enumerate(stats[1:]):
+                img_obj.array[img_obj.mask == 0] = 0
+                crop[i] = np.array(IMG.fromarray(img_obj.array).crop([a, b, a + c, b + d]).resize((192, 320)))
+            tensor = crop / 255.0
 
-        tensor = crop / 255.0
-        if self.mode == 'train' and random.uniform(0, 1) <= 0.5:
-            tensor = np.flip(tensor, 0)
+            if self.mode == 'train' and random.uniform(0, 1) <= 0.5:
+                tensor = np.flip(tensor, 0)
 
-        if self.mode == 'train' and random.uniform(0, 1) <= 0.5:
-            tensor = np.flip(tensor, 1)
-        return {'indices': self.indices[index], 'input': tensor.copy(),
-                'label': np.array(labels)}
+            if self.mode == 'train' and random.uniform(0, 1) <= 0.5:
+                tensor = np.flip(tensor, 1)
+            return {'indices': self.indices[index], 'input': tensor.copy(),
+                    'label': np.array(labels)}
+        except:
+            pass
 
     @property
     def transforms(self):
@@ -67,10 +69,11 @@ class KernelDataset(NNDataset):
             [tmf.Resize((384, 384)), tmf.ToTensor()])
 
 
-def init_cache(params, **kw):
+def init_cache(params, run, **kw):
     cache = {**kw}
     cache.update(**params)
 
+    cache['log_dir'] = cache['log_dir'] + sep + run['data_dir'].split(sep)[4]
     cache['training_log'] = ['Loss,Precision,Recall,F1,Accuracy']
     cache['validation_log'] = ['Loss,Precision,Recall,F1,Accuracy']
     cache['test_score'] = ['Split,Precision,Recall,F1,Accuracy']
@@ -113,8 +116,7 @@ def multi_reg(multi, reg):
 
 def iteration(cache, batch, nn):
     inputs = batch['input'].to(nn['device']).float()
-    labels = batch['label'].to(nn['device']).long()
-    print(labels.shape)
+    labels = batch['label'].to(nn['device']).float()
 
     if nn['model'].training:
         nn['optimizer'].zero_grad()
@@ -122,19 +124,16 @@ def iteration(cache, batch, nn):
     multi, reg = nn['model'](inputs)
     mr = multi_reg(multi, reg)
 
-    reg_loss = F.l1_loss(reg.squeeze(), labels[:, 3:].squeeze())
-
-    print(multi.shape, labels[:, 0:3].shape)
-    multi_loss = F.cross_entropy(multi, labels[:, 0:3])
-    mr_loss = F.cross_entropy(mr, labels[:, 2:3])
-
-    loss = torch.mean(reg_loss + multi_loss + mr_loss)
-    print(loss)
+    # reg_loss = F.mse_loss(reg.squeeze(), labels[:, 3:].squeeze())
+    loss = F.cross_entropy(multi, labels[:, 0:3].long())
+    # mr_loss = F.cross_entropy(mr, labels[:, 2:3].squeeze().long())
+    #
+    # loss = (reg_loss + multi_loss + mr_loss) / 3
 
     out = F.softmax(mr, 1)
-    _, pred = torch.max(F.softmax(out, 1), 1)
+    _, pred = torch.max(out, 1)
     sc = new_metrics(cache['num_class'])
-    sc.add(pred, labels)
+    sc.add(pred, labels[:, 2:3].squeeze())
 
     if nn['model'].training:
         loss.backward()
@@ -147,9 +146,4 @@ def iteration(cache, batch, nn):
 
 
 def save_predictions(cache, accumulator):
-    dataset_name = list(accumulator[0].dmap.keys()).pop()
-    file = accumulator[1][0]['indices'][2][0].split('.')[0]
-    out = accumulator[1][1]['output']
-    img = out[:, 1, :, :].cpu().numpy() * 255
-    img = np.array(img.squeeze(), dtype=np.uint8)
-    IMG.fromarray(img).save(cache['log_dir'] + sep + dataset_name + '_' + file + '.png')
+    pass

@@ -32,6 +32,7 @@ if __name__ == "__main__":
         global_score = new_metrics(params['num_class'])
         for split_file in os.listdir(run['split_dir']):
             cache = init_cache(params, run, experiment_id=split_file.split('.')[0])
+            cache['log_dir'] = cache['log_dir'] + sep + cache['dataset_name']
             os.makedirs(cache['log_dir'], exist_ok=True)
             check_previous_logs(cache)
 

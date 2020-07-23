@@ -73,7 +73,7 @@ def init_cache(params, run, **kw):
     cache = {**kw}
     cache.update(**params)
 
-    cache['log_dir'] = cache['log_dir'] + sep + run['data_dir'].split(sep)[4]
+    cache['dataset_name'] = run['data_dir'].split(sep)[4]
     cache['training_log'] = ['Loss,Precision,Recall,F1,Accuracy']
     cache['validation_log'] = ['Loss,Precision,Recall,F1,Accuracy']
     cache['test_score'] = ['Split,Precision,Recall,F1,Accuracy']

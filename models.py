@@ -67,6 +67,24 @@ class MultiLabelModule(nn.Module):
         return x.view(x.shape[0], 2, -1)
 
 
+class BinaryLabelModule(nn.Module):
+    def __init__(self, in_size):
+        super().__init__()
+        self.fc0m = nn.Linear(in_size, 512)
+        self.fc0_bn = nn.BatchNorm1d(512)
+        self.fc1m = nn.Linear(512, 256)
+        self.fc1_bn = nn.BatchNorm1d(256)
+        self.fc2m = nn.Linear(256, 64)
+        self.fc3m = nn.Linear(64, 2)
+
+    def forward(self, x):
+        x = F.relu(self.fc0_bn(self.fc0m(x)))
+        x = F.relu(self.fc1_bn(self.fc1m(x)))
+        x = F.relu(self.fc2m(x))
+        x = self.fc3m(x)
+        return x
+
+
 class RegressionModule(nn.Module):
     def __init__(self, in_size):
         super().__init__()
@@ -163,6 +181,17 @@ class MultiClassRegression(nn.Module):
         return multi, reg
 
 
+class Binary(nn.Module):
+    def __init__(self, in_ch, r=8):
+        super().__init__()
+        self.encoder = DiskExcNet(in_ch=in_ch, r=r)
+        self.cls = Binary(r * 5 * 3)
+
+    def forward(self, x):
+        x = self.encoder(x)
+        return self.cls(x)
+
+
 def get_model(which, in_ch=2, r=8):
     if which == 'multi':
         return MultiLabel(in_ch, r)
@@ -170,13 +199,15 @@ def get_model(which, in_ch=2, r=8):
         return Regression(in_ch, r)
     elif which == 'multi_reg':
         return MultiClassRegression(in_ch, r)
+    elif which == 'binary':
+        return Binary(in_ch, r)
 
 # ls
 # device = torch.device('cuda')
-m = MultiClassRegression(2, 16)
-torch_total_params = sum(p.numel() for p in m.parameters() if p.requires_grad)
-print(m)
-print('Total Params:', torch_total_params)
+# m = MultiClassRegression(2, 16)
+# torch_total_params = sum(p.numel() for p in m.parameters() if p.requires_grad)
+# print(m)
+# print('Total Params:', torch_total_params)
 #
 #
 # i = torch.randn(4, 2, 320, 192)

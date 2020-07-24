@@ -15,6 +15,7 @@ from core.utils import NNDataset
 from models import get_model
 import json
 import cv2
+import random
 
 sep = os.sep
 
@@ -37,12 +38,12 @@ class KernelDataset(NNDataset):
     def __getitem__(self, index):
         map_id, file_id, file, labels = self.indices[index]
         dt = self.dmap[map_id]
-        img_obj = Image()
-        img_obj.load(dt['data_dir'], file)
-        img_obj.load_mask(dt['mask_dir'], dt['mask_getter'])
-        img_obj.apply_clahe()
-
         try:
+            img_obj = Image()
+            img_obj.load(dt['data_dir'], file)
+            img_obj.load_mask(dt['mask_dir'], dt['mask_getter'])
+            img_obj.apply_clahe()
+
             if len(img_obj.array.shape) == 3:
                 img_obj.array = img_obj.array[:, :, 0]
 
@@ -73,7 +74,7 @@ def init_cache(params, run, **kw):
     cache = {**kw}
     cache.update(**params)
 
-    cache['dataset_name'] = run['data_dir'].split(sep)[4]
+    cache['dataset_name'] = run['data_dir'].split(sep)[1] + '_' + cache['which_model']
     cache['training_log'] = ['Loss,Precision,Recall,F1,Accuracy']
     cache['validation_log'] = ['Loss,Precision,Recall,F1,Accuracy']
     cache['test_score'] = ['Split,Precision,Recall,F1,Accuracy']
@@ -121,6 +122,28 @@ def iteration(cache, batch, nn):
     if nn['model'].training:
         nn['optimizer'].zero_grad()
 
+    if cache['which_model'] == 'multi_reg':
+        loss, sc, out, pred = _iteration_multi_reg(cache, nn, inputs, labels)
+    elif cache['which_model'] == 'multi':
+        loss, sc, out, pred = _iteration_multi(cache, nn, inputs, labels)
+    elif cache['which_model'] == "binary":
+        loss, sc, out, pred = _iteration_binary(cache, nn, inputs, labels)
+    elif cache['which_model'] == "multi_reg_random":
+        loss, sc, out, pred = _iteration_multi_reg_random(cache, nn, inputs, labels)
+    else:
+        raise ValueError(cache['which_mode'] + " is not valid.")
+
+    if nn['model'].training:
+        loss.backward()
+        nn['optimizer'].step()
+
+    avg = Avg()
+    avg.add(loss.item(), len(inputs))
+
+    return {'loss': avg, 'output': out, 'scores': sc, 'predictions': pred}
+
+
+def _iteration_multi_reg(cache, nn, inputs, labels):
     multi, reg = nn['model'](inputs)
     mr = multi_reg(multi, reg)
 
@@ -134,15 +157,50 @@ def iteration(cache, batch, nn):
     _, pred = torch.max(out, 1)
     sc = new_metrics(cache['num_class'])
     sc.add(pred, labels[:, 2:3].squeeze())
+    return loss, sc, out, pred
 
-    if nn['model'].training:
-        loss.backward()
-        nn['optimizer'].step()
 
-    avg = Avg()
-    avg.add(loss.item(), len(inputs))
+def _iteration_multi(cache, nn, inputs, labels):
+    """
+    Multilabel classification but only report COVID19 scores.
+    """
+    multi = nn['model'](inputs)
+    loss = F.cross_entropy(multi, labels[:, 0:3].long())
+    out = F.softmax(multi[:, :, 2:3].squeeze(), 1)
+    _, pred = torch.max(out, 1)
+    sc = new_metrics(cache['num_class'])
+    sc.add(pred, labels[:, 2:3].squeeze())
+    return loss, sc, out, pred
 
-    return {'loss': avg, 'output': out, 'scores': sc, 'predictions': pred}
+
+def _iteration_binary(cache, nn, inputs, labels):
+    """
+    Binary classification for COVID19.
+    """
+    out = nn['model'](inputs)
+    loss = F.cross_entropy(out, labels[:, 0:3].long())
+    out = F.softmax(out, 1)
+    _, pred = torch.max(out, 1)
+    sc = new_metrics(cache['num_class'])
+    sc.add(pred, labels[:, 2:3].squeeze())
+    return loss, sc, out, pred
+
+
+def _iteration_multi_reg_random(cache, nn, inputs, labels):
+    multi, reg = nn['model'](inputs)
+    mr = multi_reg(multi, reg)
+
+    reg_loss = F.mse_loss(reg.squeeze(), labels[:, 3:].squeeze())
+    multi_loss = F.cross_entropy(multi, labels[:, 0:3].long())
+    mr_loss = F.cross_entropy(mr, labels[:, 2:3].squeeze().long())
+
+    loss = random.choice[reg_loss, multi_loss, mr_loss]
+
+    out = F.softmax(mr, 1)
+    _, pred = torch.max(out, 1)
+    sc = new_metrics(cache['num_class'])
+    sc.add(pred, labels[:, 2:3].squeeze())
+    return loss, sc, out, pred
 
 
 def save_predictions(cache, accumulator):

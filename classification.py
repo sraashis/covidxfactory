@@ -124,11 +124,11 @@ def iteration(cache, batch, nn):
     multi, reg = nn['model'](inputs)
     mr = multi_reg(multi, reg)
 
-    # reg_loss = F.mse_loss(reg.squeeze(), labels[:, 3:].squeeze())
-    loss = F.cross_entropy(multi, labels[:, 0:3].long())
-    # mr_loss = F.cross_entropy(mr, labels[:, 2:3].squeeze().long())
-    #
-    # loss = (reg_loss + multi_loss + mr_loss) / 3
+    reg_loss = F.mse_loss(reg.squeeze(), labels[:, 3:].squeeze())
+    multi_loss = F.cross_entropy(multi, labels[:, 0:3].long())
+    mr_loss = F.cross_entropy(mr, labels[:, 2:3].squeeze().long())
+
+    loss = (reg_loss + multi_loss + mr_loss) / 3
 
     out = F.softmax(mr, 1)
     _, pred = torch.max(out, 1)

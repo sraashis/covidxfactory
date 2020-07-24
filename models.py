@@ -7,21 +7,29 @@ from core.utils import safe_concat
 
 class BasicConv2d(nn.Module):
 
-    def __init__(self, in_channels, out_channels, **kw):
+    def __init__(self, in_channels, out_channels):
         super(BasicConv2d, self).__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, bias=False, **kw)
-        self.bn = nn.BatchNorm2d(out_channels, eps=0.001)
+        self.conv_3x3 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, stride=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.conv_1x1 = nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0, stride=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.cout = nn.Conv2d(in_channels + 2 * out_channels, out_channels, kernel_size=3, padding=1, stride=1,
+                              bias=False)
+        self.bn_out = nn.BatchNorm2d(out_channels)
 
     def forward(self, x):
-        x = self.conv(x)
-        x = self.bn(x)
-        return F.relu(x, inplace=True)
+        x1 = self.bn1(self.conv_3x3(x))
+        x1 = F.relu(x1, inplace=True)
+        x2 = self.bn2(self.conv_1x1(x))
+        x2 = F.relu(x2, inplace=True)
+        out = self.bn_out(self.cout(torch.cat([x, x1, x2], 1)))
+        return F.relu(out, inplace=True)
 
 
 class MXPConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, mxp_k=2, mxp_s=2, **kw):
         super(MXPConv2d, self).__init__()
-        self.conv = BasicConv2d(in_channels, out_channels, **kw)
+        self.conv = BasicConv2d(in_channels, out_channels)
         self.mx_k = mxp_k
         self.mxp_s = mxp_s
 
@@ -34,7 +42,7 @@ class UpConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, **kw):
         super(UpConv2d, self).__init__()
         self.conv_up = nn.ConvTranspose2d(in_channels, out_channels, **kw)
-        self.conv = BasicConv2d(out_channels, out_channels, kernel_size=3, padding=1)
+        self.conv = BasicConv2d(out_channels, out_channels)
 
     def forward(self, x):
         x = self.conv_up(x)
@@ -45,38 +53,42 @@ class MultiLabelModule(nn.Module):
     def __init__(self, in_size):
         super().__init__()
         self.fc0m = nn.Linear(in_size, 512)
+        self.fc0_bn = nn.BatchNorm1d(512)
         self.fc1m = nn.Linear(512, 256)
+        self.fc1_bn = nn.BatchNorm1d(256)
         self.fc2m = nn.Linear(256, 64)
         self.fc3m = nn.Linear(64, 6)
 
     def forward(self, x):
-        fc_m = F.relu(self.fc0m(x))
-        fc_m = F.relu(self.fc1m(fc_m))
-        fc_m = F.relu(self.fc2m(fc_m))
-        fc_m = self.fc3m(fc_m)
-        return fc_m.view(fc_m.shape[0], 2, -1)
+        x = F.relu(self.fc0_bn(self.fc0m(x)))
+        x = F.relu(self.fc1_bn(self.fc1m(x)))
+        x = F.relu(self.fc2m(x))
+        x = self.fc3m(x)
+        return x.view(x.shape[0], 2, -1)
 
 
 class RegressionModule(nn.Module):
     def __init__(self, in_size):
         super().__init__()
         self.fc0m = nn.Linear(in_size, 512)
+        self.fc0_bn = nn.BatchNorm1d(512)
         self.fc1m = nn.Linear(512, 256)
+        self.fc1_bn = nn.BatchNorm1d(256)
         self.fc2m = nn.Linear(256, 64)
         self.fc3m = nn.Linear(64, 1)
 
     def forward(self, x):
-        fc_m = F.relu(self.fc0m(x))
-        fc_m = F.relu(self.fc1m(fc_m))
-        fc_m = F.relu(self.fc2m(fc_m))
-        fc_m = self.fc3m(fc_m)
-        return fc_m
+        x = F.relu(self.fc0_bn(self.fc0m(x)))
+        x = F.relu(self.fc1_bn(self.fc1m(x)))
+        x = F.relu(self.fc2m(x))
+        x = self.fc3m(x)
+        return x
 
 
 class DiskExcNet(nn.Module):
     def __init__(self, in_ch, r):
         super(DiskExcNet, self).__init__()
-        self.c1 = BasicConv2d(in_ch, r, kernel_size=3, padding=1)
+        self.c1 = BasicConv2d(in_ch, r)
 
         self.c2 = MXPConv2d(r, 2 * r, kernel_size=3, padding=1)
         self.c3 = MXPConv2d(2 * r, 4 * r, kernel_size=3, padding=1)
@@ -159,9 +171,14 @@ def get_model(which, in_ch=2, r=8):
     elif which == 'multi_reg':
         return MultiClassRegression(in_ch, r)
 
-#ls
+# ls
 # device = torch.device('cuda')
-# m = MultiClassRegression(2, 4).to(device)
+m = MultiClassRegression(2, 16)
+torch_total_params = sum(p.numel() for p in m.parameters() if p.requires_grad)
+print(m)
+print('Total Params:', torch_total_params)
+#
+#
 # i = torch.randn(4, 2, 320, 192)
 
 # multi, reg = m(i.to(device))

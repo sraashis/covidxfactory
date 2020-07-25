@@ -185,7 +185,7 @@ class Binary(nn.Module):
     def __init__(self, in_ch, r=8):
         super().__init__()
         self.encoder = DiskExcNet(in_ch=in_ch, r=r)
-        self.cls = Binary(r * 5 * 3)
+        self.cls = BinaryLabelModule(r * 5 * 3)
 
     def forward(self, x):
         x = self.encoder(x)

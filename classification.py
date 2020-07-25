@@ -33,7 +33,7 @@ class KernelDataset(NNDataset):
             self.labels = json.loads(open(lbl).read())
         _file = file.split('.')[0] + '.png'
         h, p, c, r = self.labels[file]
-        self.indices.append([map_id, file_id, _file, [1 - h, p, c, r]])
+        self.indices.append([map_id, file_id, _file, [h, p, c, r]])
 
     def __getitem__(self, index):
         map_id, file_id, file, labels = self.indices[index]
@@ -110,9 +110,8 @@ def init_nn(cache, init_weights=False):
 
 def multi_reg(multi, reg):
     multi = F.softmax(multi, 1)
-    l1 = (reg * multi[:, 0, :]).sum(1)
-    l2 = (reg / 2 * multi[:, 1, :]).sum(1)
-    return torch.cat([l1.unsqueeze(1), l2.unsqueeze(1)], 1)
+    r = torch.cat([reg, reg ** 2, reg ** 3], 1).unsqueeze(1)
+    return (multi * r).sum(2)
 
 
 def iteration(cache, batch, nn):
@@ -128,8 +127,6 @@ def iteration(cache, batch, nn):
         loss, sc, out, pred = _iteration_multi(cache, nn, inputs, labels)
     elif cache['which_model'] == "binary":
         loss, sc, out, pred = _iteration_binary(cache, nn, inputs, labels)
-    elif cache['which_model'] == "multi_reg_random":
-        loss, sc, out, pred = _iteration_multi_reg_random(cache, nn, inputs, labels)
     else:
         raise ValueError(cache['which_mode'] + " is not valid.")
 
@@ -145,13 +142,12 @@ def iteration(cache, batch, nn):
 
 def _iteration_multi_reg(cache, nn, inputs, labels):
     multi, reg = nn['model'](inputs)
-    mr = multi_reg(multi, reg)
 
     reg_loss = F.mse_loss(reg.squeeze(), labels[:, 3:].squeeze())
-    multi_loss = F.cross_entropy(multi, labels[:, 0:3].long())
+    mr = multi_reg(multi, reg)
     mr_loss = F.cross_entropy(mr, labels[:, 2:3].squeeze().long())
 
-    loss = (reg_loss + multi_loss + mr_loss) / 3
+    loss = (reg_loss + mr_loss) / 2
 
     out = F.softmax(mr, 1)
     _, pred = torch.max(out, 1)
@@ -178,25 +174,8 @@ def _iteration_binary(cache, nn, inputs, labels):
     Binary classification for COVID19.
     """
     out = nn['model'](inputs)
-    loss = F.cross_entropy(out, labels[:, 0:3].long())
+    loss = F.cross_entropy(out, labels[:, 2:3].squeeze().long())
     out = F.softmax(out, 1)
-    _, pred = torch.max(out, 1)
-    sc = new_metrics(cache['num_class'])
-    sc.add(pred, labels[:, 2:3].squeeze())
-    return loss, sc, out, pred
-
-
-def _iteration_multi_reg_random(cache, nn, inputs, labels):
-    multi, reg = nn['model'](inputs)
-    mr = multi_reg(multi, reg)
-
-    reg_loss = F.mse_loss(reg.squeeze(), labels[:, 3:].squeeze())
-    multi_loss = F.cross_entropy(multi, labels[:, 0:3].long())
-    mr_loss = F.cross_entropy(mr, labels[:, 2:3].squeeze().long())
-
-    loss = random.choice[reg_loss, multi_loss, mr_loss]
-
-    out = F.softmax(mr, 1)
     _, pred = torch.max(out, 1)
     sc = new_metrics(cache['num_class'])
     sc.add(pred, labels[:, 2:3].squeeze())

@@ -33,7 +33,7 @@ class KernelDataset(NNDataset):
             self.labels = json.loads(open(lbl).read())
         _file = file.split('.')[0] + '.png'
         h, p, c, r = self.labels[file]
-        self.indices.append([map_id, file_id, _file, [h, p, c, r]])
+        self.indices.append([map_id, file_id, _file, [1 - h, p, c, r]])
 
     def __getitem__(self, index):
         map_id, file_id, file, labels = self.indices[index]
@@ -108,10 +108,11 @@ def init_nn(cache, init_weights=False):
     return {'device': device, 'model': model.to(device), 'optimizer': optim}
 
 
-def multi_reg(multi, reg):
+def multi_reg(multi, reg, loss_eps=1):
     multi = F.softmax(multi, 1)
-    r = torch.cat([reg, reg ** 2, reg ** 3], 1).unsqueeze(1)
-    return (multi * r).sum(2)
+    # reg = 2 / (reg + loss_eps)
+    # mr = multi * reg[..., None]
+    return multi.sum(2)
 
 
 def iteration(cache, batch, nn):
@@ -142,12 +143,13 @@ def iteration(cache, batch, nn):
 
 def _iteration_multi_reg(cache, nn, inputs, labels):
     multi, reg = nn['model'](inputs)
+    mr = multi_reg(multi, reg)
 
     reg_loss = F.mse_loss(reg.squeeze(), labels[:, 3:].squeeze())
-    mr = multi_reg(multi, reg)
+    multi_loss = F.cross_entropy(multi, labels[:, 0:3].long())
     mr_loss = F.cross_entropy(mr, labels[:, 2:3].squeeze().long())
 
-    loss = (reg_loss + mr_loss) / 2
+    loss = (reg_loss + multi_loss + mr_loss) / 3
 
     out = F.softmax(mr, 1)
     _, pred = torch.max(out, 1)

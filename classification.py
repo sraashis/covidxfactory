@@ -149,7 +149,7 @@ def _iteration_multi_reg(cache, nn, inputs, labels):
     multi_loss = F.cross_entropy(multi, labels[:, 0:3].long())
     mr_loss = F.cross_entropy(mr, labels[:, 2:3].squeeze().long())
 
-    loss = (reg_loss + multi_loss + mr_loss) / 3
+    loss = reg_loss + multi_loss + mr_loss
 
     out = F.softmax(mr, 1)
     _, pred = torch.max(out, 1)

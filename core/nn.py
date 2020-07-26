@@ -99,4 +99,4 @@ def train(cache, nn, dataset, val_dataset):
         val_loss, val_score = evaluation(cache, nn, split_key='validation', dataset_list=[val_dataset])
         cache['validation_log'].append([val_loss.average, *val_score.scores()])
         save_if_better(cache, nn['model'], ep, val_score.f1, 'maximize')
-        plot_progress(cache, plot_keys=['training_log', 'validation_log'])
+        plot_progress(cache, experiment_id=cache['experiment_id'], plot_keys=['training_log', 'validation_log'])

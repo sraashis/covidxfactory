@@ -29,10 +29,10 @@ if __name__ == "__main__":
                 run[k] = params['data_dir'] + sep + run[k]
                 os.makedirs(run[k], exist_ok=True)
 
-        global_score = new_metrics(params['num_class'])
+        global_score, global_cache = new_metrics(params['num_class']), {'test_scores': []}
         for split_file in os.listdir(run['split_dir']):
             cache = init_cache(params, run, experiment_id=split_file.split('.')[0])
-            cache['log_dir'] = cache['log_dir'] + sep + cache['dataset_name']
+            cache['log_dir'] = cache['log_dir'] + os.sep + cache['dataset_name']
             os.makedirs(cache['log_dir'], exist_ok=True)
             check_previous_logs(cache)
 
@@ -50,7 +50,6 @@ if __name__ == "__main__":
                 tu.save_cache(cache)
 
             core.nn.load_checkpoint(cache, nn['model'])
-
             test_dataset_list = []
             if cache.get('load_sparse'):
                 for f in split['test']:
@@ -70,6 +69,7 @@ if __name__ == "__main__":
             test_loss, test_score = core.nn.evaluation(cache, nn, split_key='test', save_pred=True,
                                                        dataset_list=test_dataset_list)
             global_score.accumulate(test_score)
-            cache['test_score'].append([split_file] + test_score.prfa())
-            cache['test_score'].append(['Global'] + global_score.prfa())
-            tu.save_scores(cache, file_keys=['test_score'])
+            cache['test_score'].append([split_file] + test_score.scores())
+            global_cache['global_test_scores'].append([split_file] + test_score.scores())
+            tu.save_scores(cache, experiment_id=cache['experiment_id'], file_keys=['test_score'])
+        tu.save_scores(global_cache, experiment_id='global', file_keys=['test_scores'])

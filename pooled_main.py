@@ -21,8 +21,8 @@ RUNS = [runs.DRIVE, runs.DRISTI]
 if __name__ == "__main__":
     params = get_args()
     global_score = new_metrics(params['num_class'])
-    cache = init_cache(params, {'data_dir': sep * 11}, experiment_id='pooled')
-    cache['log_dir'] = cache['log_dir'] + os.sep + 'pooled'
+    cache = init_cache(params, {'data_dir': sep*11}, experiment_id='pooled')
+    cache['log_dir'] = cache['log_dir'] + sep + 'pooled'
     os.makedirs(cache['log_dir'], exist_ok=True)
     check_previous_logs(cache)
 
@@ -44,4 +44,4 @@ if __name__ == "__main__":
                                                dataset_list=test_dataset_list)
     global_score.accumulate(test_score)
     cache['test_score'].append(['Global'] + global_score.prfa())
-    save_scores(cache, file_keys=['test_score'])
+    save_scores(cache, experiment_id=cache['experiment_id'], file_keys=['test_score'])

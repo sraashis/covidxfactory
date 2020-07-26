@@ -105,7 +105,7 @@ def make_weights_for_balanced_classes(images, nclasses):
     return weight
 
 
-def plot_progress(cache, plot_keys=[], num_points=51):
+def plot_progress(cache, experiment_id='', plot_keys=[], num_points=51):
     scaler = MinMaxScaler()
     for k in plot_keys:
         data = cache.get(k, [])
@@ -127,13 +127,13 @@ def plot_progress(cache, plot_keys=[], num_points=51):
         ax = df.plot(x_compat=True, alpha=0.2, legend=0)
         rolling.plot(ax=ax, title=k.upper())
 
-        plt.savefig(cache['log_dir'] + os.sep + f"{cache['experiment_id']}_{k}.png")
+        plt.savefig(cache['log_dir'] + os.sep + f"{experiment_id}_{k}.png")
         plt.close('all')
 
 
-def save_scores(cache, file_keys=[]):
+def save_scores(cache, experiment_id='', file_keys=[]):
     for fk in file_keys:
-        with open(cache['log_dir'] + os.sep + f'{cache["experiment_id"]}_{fk}.csv', 'w') as file:
+        with open(cache['log_dir'] + os.sep + f'{experiment_id}_{fk}.csv', 'w') as file:
             for line in cache[fk] if any(isinstance(ln, list) for ln in cache[fk]) else [cache[fk]]:
                 if isinstance(line, list):
                     file.write(','.join([str(s) for s in line]) + '\n')
@@ -220,7 +220,7 @@ class NNDataset(Dataset):
     def load_index(self, map_id, file_id, file):
         self.indices.append([map_id, file_id, file])
 
-    def load_indices(self, map_id, files, **kw):
+    def _load_indices(self, map_id, files, **kw):
         for file_id, file in enumerate(files, 1):
             if len(self) >= self.limit:
                 break
@@ -241,7 +241,7 @@ class NNDataset(Dataset):
 
     def add(self, dataset_id, files, debug=True, **kw):
         self.dmap[dataset_id] = kw
-        self.load_indices(map_id=dataset_id, files=files, debug=debug)
+        self._load_indices(map_id=dataset_id, files=files, debug=debug)
 
     @classmethod
     def pool(cls, runs, data_dir='data', split_key=None, limit=float('inf'), sparse=False, debug=True):

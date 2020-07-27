@@ -29,7 +29,7 @@ if __name__ == "__main__":
                 run[k] = params['data_dir'] + sep + run[k]
                 os.makedirs(run[k], exist_ok=True)
 
-        global_score, global_cache = new_metrics(params['num_class']), {'test_scores': []}
+        global_score, global_cache = new_metrics(params['num_class']), {'test_score': []}
         for split_file in os.listdir(run['split_dir']):
             cache = init_cache(params, run, experiment_id=split_file.split('.')[0])
             cache['log_dir'] = cache['log_dir'] + os.sep + cache['dataset_name']
@@ -70,6 +70,6 @@ if __name__ == "__main__":
                                                        dataset_list=test_dataset_list)
             global_score.accumulate(test_score)
             cache['test_score'].append([split_file] + test_score.scores())
-            global_cache['global_test_scores'].append([split_file] + test_score.scores())
+            global_cache['test_score'].append([split_file] + test_score.scores())
             tu.save_scores(cache, experiment_id=cache['experiment_id'], file_keys=['test_score'])
-        tu.save_scores(global_cache, experiment_id='global', file_keys=['test_scores'])
+        tu.save_scores(global_cache, experiment_id='global', file_keys=['test_score'])

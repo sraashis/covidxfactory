@@ -104,13 +104,11 @@ class KernelTrainer(ETTrainer):
         multi, reg = self.nn['model'](inputs)
         mr = multi_reg(multi, reg)
 
-        reg_loss = F.mse_loss(reg.squeeze(), labels[:, 3:].squeeze())
+        reg_loss = F.mse_loss(reg.squeeze(), labels[:, 3:].squeeze().float())
         multi_loss = F.cross_entropy(multi, labels[:, 0:3].long())
         mr_loss = F.cross_entropy(mr, labels[:, 2:3].squeeze().long())
 
         loss = reg_loss + multi_loss + mr_loss
-        # reg_loss.backward(retain_graph=True)
-        # multi_loss.backward(retain_graph=True)
 
         out = F.softmax(mr, 1)
         _, pred = torch.max(out, 1)

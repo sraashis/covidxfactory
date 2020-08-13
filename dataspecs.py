@@ -3,6 +3,7 @@ import os
 sep = os.sep
 # --------------------------------------------------------------------------------------------
 V7CF_DATASET = {
+    'name': 'v7_lab_cf',
     'data_dir': 'v7_lab_cf' + sep + 'images',
     'mask_dir': 'v7_lab_cf' + sep + 'masks',
     'label_dir': 'v7_lab_cf' + sep + 'labels',

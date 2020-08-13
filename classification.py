@@ -6,38 +6,36 @@ import torch
 import torch.nn.functional as F
 import torchvision.transforms as tmf
 from PIL import Image as IMG
-from torch.optim import Adam
 
-import core.nn
-from core.imageutils import Image
-from core.measurements import new_metrics, Avg
-from core.utils import NNDataset
+from easytorch.utils.imageutils import Image
+from easytorch.core.measurements import Avg, Prf1a
+from easytorch.core.nn import ETTrainer, ETDataset
 from models import get_model
 import json
+
 import cv2
-import random
 
 sep = os.sep
 
 
-class KernelDataset(NNDataset):
+class KernelDataset(ETDataset):
     def __init__(self, **kw):
         super().__init__(**kw)
         self.get_label = kw.get('label_getter')
         self.get_mask = kw.get('mask_getter')
         self.labels = None
 
-    def load_index(self, map_id, file_id, file):
+    def load_index(self, map_id, file):
         if not self.labels:
-            lbl = self.dmap[map_id]['label_dir'] + sep + os.listdir(self.dmap[map_id]['label_dir'])[0]
+            lbl = self.dataspecs[map_id]['label_dir'] + sep + os.listdir(self.dataspecs[map_id]['label_dir'])[0]
             self.labels = json.loads(open(lbl).read())
         _file = file.split('.')[0] + '.png'
         h, p, c, r = self.labels[file]
-        self.indices.append([map_id, file_id, _file, [1 - h, p, c, r]])
+        self.indices.append([map_id, _file, [1 - h, p, c, r]])
 
     def __getitem__(self, index):
-        map_id, file_id, file, labels = self.indices[index]
-        dt = self.dmap[map_id]
+        map_id, file, labels = self.indices[index]
+        dt = self.dataspecs[map_id]
         try:
             img_obj = Image()
             img_obj.load(dt['data_dir'], file)
@@ -70,44 +68,6 @@ class KernelDataset(NNDataset):
             [tmf.Resize((384, 384)), tmf.ToTensor()])
 
 
-def init_cache(params, run, **kw):
-    cache = {**kw}
-    cache.update(**params)
-
-    cache['dataset_name'] = run['data_dir'].split(sep)[1] + '_' + cache['which_model']
-    cache['training_log'] = ['Loss,Precision,Recall,F1,Accuracy']
-    cache['validation_log'] = ['Loss,Precision,Recall,F1,Accuracy']
-    cache['test_score'] = ['Split,Precision,Recall,F1,Accuracy']
-
-    if params['checkpoint'] is None:
-        cache['checkpoint'] = cache['experiment_id'] + '.pt'
-
-    cache['best_score'] = 0.0
-    cache['best_epoch'] = 0
-    return cache
-
-
-def init_nn(cache, init_weights=False):
-    if torch.cuda.is_available() and cache['num_gpu'] > 0:
-        device = torch.device("cuda:0")
-    else:
-        device = torch.device("cpu")
-
-    model = get_model(which=cache['which_model'], in_ch=2, r=cache['model_scale'])
-    optim = Adam(model.parameters(), lr=cache['learning_rate'])
-
-    if cache['debug']:
-        torch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        print('Total Params:', torch_total_params)
-
-    if device.type == 'cuda' and cache.get('num_gpu') > 1:
-        model = torch.nn.DataParallel(model, list(range(cache.get('num_gpu'))))
-    if init_weights:
-        torch.manual_seed(cache['seed'])
-        core.nn.initialize_weights(model)
-    return {'device': device, 'model': model.to(device), 'optimizer': optim}
-
-
 def multi_reg(multi, reg, loss_eps=1):
     multi = F.softmax(multi, 1)
     # reg = 2 / (reg + loss_eps)
@@ -115,74 +75,87 @@ def multi_reg(multi, reg, loss_eps=1):
     return multi.sum(2)
 
 
-def iteration(cache, batch, nn):
-    inputs = batch['input'].to(nn['device']).float()
-    labels = batch['label'].to(nn['device']).float()
+class KernelTrainer(ETTrainer):
+    def __init__(self, args):
+        super().__init__(args)
 
-    if nn['model'].training:
-        nn['optimizer'].zero_grad()
+    def _init_nn_model(self):
+        self.nn['model'] = get_model(self.args['which_model'], self.args['num_channel'], r=self.args['model_scale'])
 
-    if cache['which_model'] == 'multi_reg':
-        loss, sc, out, pred = _iteration_multi_reg(cache, nn, inputs, labels)
-    elif cache['which_model'] == 'multi':
-        loss, sc, out, pred = _iteration_multi(cache, nn, inputs, labels)
-    elif cache['which_model'] == "binary":
-        loss, sc, out, pred = _iteration_binary(cache, nn, inputs, labels)
-    else:
-        raise ValueError(cache['which_mode'] + " is not valid.")
+    def iteration(self, batch):
+        inputs = batch['input'].to(self.nn['device']).float()
+        labels = batch['label'].to(self.nn['device']).long()
 
-    if nn['model'].training:
-        loss.backward()
-        nn['optimizer'].step()
+        if self.args['which_model'] == 'multi_reg':
+            loss, sc, out, pred = self._iteration_multi_reg(inputs, labels)
+        elif self.args['which_model'] == 'multi':
+            loss, sc, out, pred = self._iteration_multi(inputs, labels)
+        elif self.args['which_model'] == "binary":
+            loss, sc, out, pred = self._iteration_binary(inputs, labels)
+        else:
+            raise ValueError(self.args['which_mode'] + " is not valid.")
 
-    avg = Avg()
-    avg.add(loss.item(), len(inputs))
+        avg = Avg()
+        avg.add(loss.item(), len(inputs))
 
-    return {'loss': avg, 'output': out, 'scores': sc, 'predictions': pred}
+        return {'loss': loss, 'avg_loss': avg, 'output': out, 'scores': sc, 'predictions': pred}
 
+    def _iteration_multi_reg(self, inputs, labels):
+        multi, reg = self.nn['model'](inputs)
+        mr = multi_reg(multi, reg)
 
-def _iteration_multi_reg(cache, nn, inputs, labels):
-    multi, reg = nn['model'](inputs)
-    mr = multi_reg(multi, reg)
+        reg_loss = F.mse_loss(reg.squeeze(), labels[:, 3:].squeeze())
+        multi_loss = F.cross_entropy(multi, labels[:, 0:3].long())
+        mr_loss = F.cross_entropy(mr, labels[:, 2:3].squeeze().long())
 
-    reg_loss = F.mse_loss(reg.squeeze(), labels[:, 3:].squeeze())
-    multi_loss = F.cross_entropy(multi, labels[:, 0:3].long())
-    mr_loss = F.cross_entropy(mr, labels[:, 2:3].squeeze().long())
+        loss = reg_loss + multi_loss + mr_loss
+        # reg_loss.backward(retain_graph=True)
+        # multi_loss.backward(retain_graph=True)
 
-    loss = reg_loss + multi_loss + mr_loss
+        out = F.softmax(mr, 1)
+        _, pred = torch.max(out, 1)
+        sc = self.new_metrics()
+        sc.add(pred, labels[:, 2:3].squeeze())
+        return loss, sc, out, pred
 
-    out = F.softmax(mr, 1)
-    _, pred = torch.max(out, 1)
-    sc = new_metrics(cache['num_class'])
-    sc.add(pred, labels[:, 2:3].squeeze())
-    return loss, sc, out, pred
+    def _iteration_multi(self, inputs, labels):
+        """
+        Multilabel classification but only report COVID19 scores.
+        """
+        multi = self.nn['model'](inputs)
+        loss = F.cross_entropy(multi, labels[:, 0:3].long())
+        out = F.softmax(multi[:, :, 2:3].squeeze(), 1)
+        _, pred = torch.max(out, 1)
+        sc = self.new_metrics()
+        sc.add(pred, labels[:, 2:3].squeeze())
+        return loss, sc, out, pred
 
+    def _iteration_binary(self, inputs, labels):
+        """
+        Binary classification for COVID19.
+        """
+        out = self.nn['model'](inputs)
+        loss = F.cross_entropy(out, labels[:, 2:3].squeeze().long())
+        out = F.softmax(out, 1)
+        _, pred = torch.max(out, 1)
+        sc = self.new_metrics()
+        sc.add(pred, labels[:, 2:3].squeeze())
+        return loss, sc, out, pred
 
-def _iteration_multi(cache, nn, inputs, labels):
-    """
-    Multilabel classification but only report COVID19 scores.
-    """
-    multi = nn['model'](inputs)
-    loss = F.cross_entropy(multi, labels[:, 0:3].long())
-    out = F.softmax(multi[:, :, 2:3].squeeze(), 1)
-    _, pred = torch.max(out, 1)
-    sc = new_metrics(cache['num_class'])
-    sc.add(pred, labels[:, 2:3].squeeze())
-    return loss, sc, out, pred
+    def new_metrics(self):
+        return Prf1a()
 
+    def save_predictions(self, dataset, its):
+        pass
 
-def _iteration_binary(cache, nn, inputs, labels):
-    """
-    Binary classification for COVID19.
-    """
-    out = nn['model'](inputs)
-    loss = F.cross_entropy(out, labels[:, 2:3].squeeze().long())
-    out = F.softmax(out, 1)
-    _, pred = torch.max(out, 1)
-    sc = new_metrics(cache['num_class'])
-    sc.add(pred, labels[:, 2:3].squeeze())
-    return loss, sc, out, pred
+    def reset_dataset_cache(self):
+        self.cache['global_test_score'] = []
+        self.cache['monitor_metrics'] = 'f1'
+        self.cache['score_direction'] = 'maximize'
+        self.cache['log_dir'] = self.cache['log_dir'] + '_' + self.args['which_model']
 
-
-def save_predictions(cache, accumulator):
-    pass
+    def reset_fold_cache(self):
+        self.cache['training_log'] = ['Loss,Precision,Recall,F1,Accuracy']
+        self.cache['validation_log'] = ['Loss,Precision,Recall,F1,Accuracy']
+        self.cache['test_score'] = ['Split,Precision,Recall,F1,Accuracy']
+        self.cache['best_score'] = 0.0

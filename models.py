@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from core.utils import safe_concat
+from easytorch.core.utils import safe_concat
 
 
 class BasicConv2d(nn.Module):
@@ -103,9 +103,9 @@ class RegressionModule(nn.Module):
         return x
 
 
-class DiskExcNet(nn.Module):
+class CVNet(nn.Module):
     def __init__(self, in_ch, r):
-        super(DiskExcNet, self).__init__()
+        super(CVNet, self).__init__()
         self.c1 = BasicConv2d(in_ch, r)
 
         self.c2 = MXPConv2d(r, 2 * r, kernel_size=3, padding=1)
@@ -148,7 +148,7 @@ class DiskExcNet(nn.Module):
 class MultiLabel(nn.Module):
     def __init__(self, in_ch, r=8):
         super().__init__()
-        self.encoder = DiskExcNet(in_ch=in_ch, r=r)
+        self.encoder = CVNet(in_ch=in_ch, r=r)
         self.multi = MultiLabelModule(r * 5 * 3)
 
     def forward(self, x):
@@ -159,7 +159,7 @@ class MultiLabel(nn.Module):
 class Regression(nn.Module):
     def __init__(self, in_ch, r=8):
         super().__init__()
-        self.encoder = DiskExcNet(in_ch=in_ch, r=r)
+        self.encoder = CVNet(in_ch=in_ch, r=r)
         self.reg = RegressionModule(r * 5 * 3)
 
     def forward(self, x):
@@ -170,7 +170,7 @@ class Regression(nn.Module):
 class MultiClassRegression(nn.Module):
     def __init__(self, in_ch=2, r=8):
         super().__init__()
-        self.encoder = DiskExcNet(in_ch=in_ch, r=r)
+        self.encoder = CVNet(in_ch=in_ch, r=r)
         self.multi = MultiLabelModule(r * 5 * 3)
         self.reg = RegressionModule(r * 5 * 3)
 
@@ -184,7 +184,7 @@ class MultiClassRegression(nn.Module):
 class Binary(nn.Module):
     def __init__(self, in_ch, r=8):
         super().__init__()
-        self.encoder = DiskExcNet(in_ch=in_ch, r=r)
+        self.encoder = CVNet(in_ch=in_ch, r=r)
         self.cls = BinaryLabelModule(r * 5 * 3)
 
     def forward(self, x):

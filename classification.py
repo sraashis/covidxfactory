@@ -16,6 +16,7 @@ import json
 import cv2
 
 sep = os.sep
+import random
 
 
 class KernelDataset(ETDataset):
@@ -31,7 +32,7 @@ class KernelDataset(ETDataset):
             self.labels = json.loads(open(lbl).read())
         _file = file.split('.')[0] + '.png'
         h, p, c, r = self.labels[file]
-        self.indices.append([map_id, _file, [1 - h, p, c, r]])
+        self.indices.append([map_id, _file, [h, p, c, r]])
 
     def __getitem__(self, index):
         map_id, file, labels = self.indices[index]
@@ -68,10 +69,9 @@ class KernelDataset(ETDataset):
             [tmf.Resize((384, 384)), tmf.ToTensor()])
 
 
-def multi_reg(multi, reg, loss_eps=1):
+def multi_2(multi):
+    multi[:, 0] = 1 - multi[:, 0]
     multi = F.softmax(multi, 1)
-    # reg = 2 / (reg + loss_eps)
-    # mr = multi * reg[..., None]
     return multi.sum(2)
 
 
@@ -86,9 +86,7 @@ class KernelTrainer(ETTrainer):
         inputs = batch['input'].to(self.nn['device']).float()
         labels = batch['label'].to(self.nn['device']).long()
 
-        if self.args['which_model'] == 'multi_reg':
-            loss, sc, out, pred = self._iteration_multi_reg(inputs, labels)
-        elif self.args['which_model'] == 'multi':
+        if self.args['which_model'] == 'multi':
             loss, sc, out, pred = self._iteration_multi(inputs, labels)
         elif self.args['which_model'] == "binary":
             loss, sc, out, pred = self._iteration_binary(inputs, labels)
@@ -100,32 +98,13 @@ class KernelTrainer(ETTrainer):
 
         return {'loss': loss, 'avg_loss': avg, 'output': out, 'scores': sc, 'predictions': pred}
 
-    def _iteration_multi_reg(self, inputs, labels):
-        multi, reg = self.nn['model'](inputs)
-        mr = multi_reg(multi, reg)
-
-        reg_loss = F.mse_loss(reg.squeeze(), labels[:, 3:].squeeze().float())
-        multi_loss = F.cross_entropy(multi, labels[:, 0:3].long())
-        mr_loss = F.cross_entropy(mr, labels[:, 2:3].squeeze().long())
-
-        loss = reg_loss + multi_loss + mr_loss
-
-        out = F.softmax(mr, 1)
-        _, pred = torch.max(out, 1)
-        sc = self.new_metrics()
-        sc.add(pred, labels[:, 2:3].squeeze())
-        return loss, sc, out, pred
-
     def _iteration_multi(self, inputs, labels):
-        """
-        Multilabel classification but only report COVID19 scores.
-        """
         multi = self.nn['model'](inputs)
         loss = F.cross_entropy(multi, labels[:, 0:3].long())
-        out = F.softmax(multi[:, :, 2:3].squeeze(), 1)
+        out = F.softmax(multi, 1)
         _, pred = torch.max(out, 1)
         sc = self.new_metrics()
-        sc.add(pred, labels[:, 2:3].squeeze())
+        sc.add(pred, labels[:, 0:3].squeeze())
         return loss, sc, out, pred
 
     def _iteration_binary(self, inputs, labels):

@@ -13,6 +13,8 @@ In most cases if there is covid present, there will also be Pnuemonia.
 ###2. Binary Classification
 - In this setting, we treat each image as either image with no-covid (label 0), or with covid(label 1) and do binary classification.
 ### How to run?
+- Install pytorch and torchvision from official website
+- pip install easytorch
 ```commandline
 python main.py -ph test -b 32 -wm multi -nw 16 -e 71 -nch 1 -pat 11
 python main.py -ph train -b 32 -wm binary -nw 16 -e 71 -nch 1 -pat 11

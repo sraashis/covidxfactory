@@ -1,16 +1,16 @@
-### Healthy, Phnumonia, and Covid-19 classifcation of V7 Labs & CloudFactory Release Annotated X-Ray Dataset
+### Healthy, Phnumonia, and Covid-19 chest X-ray classifcation of V7 Labs & CloudFactory Release Annotated X-Ray Dataset
 - Link: https://github.com/v7labs/covid-19-xray-dataset
 - Blog: https://blog.cloudfactory.com/annotated-chest-x-ray-dataset-for-covid-19-research
 
 I used the notebook NB.ipynb to transform the ground truth to work for my setting.
 
-#### It consisted of ~6000 images with labels when I did this project: **Healthy, Phneumonia, and Covid** In this work I have applied two classification strategies using popular U-Net architecture.
-### 1. Multi-label classification:
+### It consisted of ~6000 images with labels when I did this project: **Healthy, Phneumonia, and Covid** In this work I have applied two classification strategies using popular U-Net architecture.
+#### 1. Multi-label classification:
 In this setting the labesl will be [h, p, c] where each value will be either 0 or 1.
 for example, if any image is healthy the label would be [1, 0, 0]. If any image has only Phnumonia it will be [0, 1, 0]
 In most cases if there is covid present, there will also be Pnuemonia.
 
-### 2. Binary Classification
+#### 2. Binary Classification
 - In this setting, we treat each image as either image with no-covid (label 0), or with covid(label 1) and do binary classification.
 ### How to run?
 - Downlad the sample datasets_sample.zip from releases(2304 images out of ~6.5k). 

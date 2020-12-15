@@ -52,3 +52,8 @@ Training:
 ![Plot](net_logs/v7_lab_cf_binary/SPLIT_7_training_log.png)
 Validation:
 ![Plot](net_logs/v7_lab_cf_binary/SPLIT_7_validation_log.png)
+
+### References for U-NET
+``
+Architecture used, O. Ronneberger, P. Fischer, and T. Brox, “U-net: Convolutional networks for biomedical image segmentation,” in MICCAI, (2015)
+``

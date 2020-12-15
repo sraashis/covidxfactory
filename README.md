@@ -5,12 +5,12 @@
 I used the notebook NB.ipynb to transform the ground truth to work for my setting.
 
 #### It consisted of ~6000 images with labels when I did this project: **Healthy, Phneumonia, and Covid** In this work I have applied two classification strategies using popular U-Net architecture.
-###1. Multi-label classification:
+### 1. Multi-label classification:
 In this setting the labesl will be [h, p, c] where each value will be either 0 or 1.
 for example, if any image is healthy the label would be [1, 0, 0]. If any image has only Phnumonia it will be [0, 1, 0]
 In most cases if there is covid present, there will also be Pnuemonia.
 
-###2. Binary Classification
+### 2. Binary Classification
 - In this setting, we treat each image as either image with no-covid (label 0), or with covid(label 1) and do binary classification.
 ### How to run?
 - Install pytorch and torchvision from official website

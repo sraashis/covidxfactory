@@ -1,22 +1,18 @@
+import json
 import os
-import random
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as tmf
 from PIL import Image as IMG
-
-from easytorch.utils.imageutils import Image
-from easytorch.core.measurements import Avg, Prf1a
 from easytorch.core.nn import ETTrainer, ETDataset
-from models import get_model
-import json
+from easytorch.utils.imageutils import Image
+from easytorch.utils.measurements import Prf1a
 
-import cv2
+from models import get_model
 
 sep = os.sep
-import random
 
 
 class KernelDataset(ETDataset):
@@ -27,12 +23,21 @@ class KernelDataset(ETDataset):
         self.labels = None
 
     def load_index(self, map_id, file):
+        """
+        Load labels:
+            Labl is a json file with
+                key: image_name.json ->
+                value: labels for [healthy{0, 1}, Pneumonia{0, 1}, covid19{0,1}, *] Where * is mulit-class label {0, 1, 2}
+                for Healthy, Pneumonia, and covid respectively-This multi-label is not used in this work.
+                 We only do multi-label and binary classification.
+        """
         if not self.labels:
             lbl = self.dataspecs[map_id]['label_dir'] + sep + os.listdir(self.dataspecs[map_id]['label_dir'])[0]
             self.labels = json.loads(open(lbl).read())
-        _file = file.split('.')[0] + '.png'
-        h, p, c, r = self.labels[file]
-        self.indices.append([map_id, _file, [h, p, c, r]])
+        _file = file.split('.')[0] + '.json'
+        if self.labels.get(_file):
+            h, p, c, r = self.labels[_file]
+            self.indices.append([map_id, file, [h, p, c, r]])
 
     def __getitem__(self, index):
         map_id, file, labels = self.indices[index]
@@ -45,20 +50,8 @@ class KernelDataset(ETDataset):
 
             if len(img_obj.array.shape) == 3:
                 img_obj.array = img_obj.array[:, :, 0]
-
-            num, comp, stats, centriod = cv2.connectedComponentsWithStats(img_obj.mask)
-            crop = np.zeros((2, 320, 192), dtype=np.uint8)
-            for i, (a, b, c, d, _) in enumerate(stats[1:]):
-                img_obj.array[img_obj.mask == 0] = 0
-                crop[i] = np.array(IMG.fromarray(img_obj.array).crop([a, b, a + c, b + d]).resize((192, 320)))
-            tensor = crop / 255.0
-
-            if self.mode == 'train' and random.uniform(0, 1) <= 0.5:
-                tensor = np.flip(tensor, 0)
-
-            if self.mode == 'train' and random.uniform(0, 1) <= 0.5:
-                tensor = np.flip(tensor, 1)
-            return {'indices': self.indices[index], 'input': tensor.copy(),
+            tensor = self.transforms(IMG.fromarray(img_obj.array))
+            return {'indices': self.indices[index], 'input': tensor,
                     'label': np.array(labels)}
         except:
             pass
@@ -66,13 +59,7 @@ class KernelDataset(ETDataset):
     @property
     def transforms(self):
         return tmf.Compose(
-            [tmf.Resize((384, 384)), tmf.ToTensor()])
-
-
-def multi_2(multi):
-    multi[:, 0] = 1 - multi[:, 0]
-    multi = F.softmax(multi, 1)
-    return multi.sum(2)
+            [tmf.Resize((192, 320)), tmf.RandomHorizontalFlip(), tmf.RandomVerticalFlip(), tmf.ToTensor()])
 
 
 class KernelTrainer(ETTrainer):
@@ -83,8 +70,8 @@ class KernelTrainer(ETTrainer):
         self.nn['model'] = get_model(self.args['which_model'], self.args['num_channel'], r=self.args['model_scale'])
 
     def iteration(self, batch):
-        inputs = batch['input'].to(self.nn['device']).float()
-        labels = batch['label'].to(self.nn['device']).long()
+        inputs = batch['input'].to(self.device['gpu']).float()
+        labels = batch['label'].to(self.device['gpu']).long()
 
         if self.args['which_model'] == 'multi':
             loss, sc, out, pred = self._iteration_multi(inputs, labels)
@@ -93,10 +80,10 @@ class KernelTrainer(ETTrainer):
         else:
             raise ValueError(self.args['which_mode'] + " is not valid.")
 
-        avg = Avg()
+        avg = self.new_averages()
         avg.add(loss.item(), len(inputs))
 
-        return {'loss': loss, 'avg_loss': avg, 'output': out, 'scores': sc, 'predictions': pred}
+        return {'loss': loss, 'averages': avg, 'output': out, 'metrics': sc, 'predictions': pred}
 
     def _iteration_multi(self, inputs, labels):
         multi = self.nn['model'](inputs)
@@ -104,7 +91,7 @@ class KernelTrainer(ETTrainer):
         out = F.softmax(multi, 1)
         _, pred = torch.max(out, 1)
         sc = self.new_metrics()
-        sc.add(pred, labels[:, 0:3].squeeze())
+        sc.add(pred.squeeze(), labels[:, 0:3].squeeze())
         return loss, sc, out, pred
 
     def _iteration_binary(self, inputs, labels):
@@ -122,13 +109,10 @@ class KernelTrainer(ETTrainer):
     def new_metrics(self):
         return Prf1a()
 
-    def save_predictions(self, dataset, its):
-        pass
-
     def reset_dataset_cache(self):
         self.cache['global_test_score'] = []
-        self.cache['monitor_metrics'] = 'f1'
-        self.cache['score_direction'] = 'maximize'
+        self.cache['monitor_metric'] = 'f1'
+        self.cache['metric_direction'] = 'maximize'
         self.cache['log_dir'] = self.cache['log_dir'] + '_' + self.args['which_model']
 
     def reset_fold_cache(self):

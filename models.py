@@ -1,51 +1,8 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
+import numpy as np
 from easytorch.core.utils import safe_concat
-
-
-class BasicConv2d(nn.Module):
-
-    def __init__(self, in_channels, out_channels):
-        super(BasicConv2d, self).__init__()
-        self.conv_3x3 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, stride=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        self.conv_1x1 = nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0, stride=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(out_channels)
-        self.cout = nn.Conv2d(in_channels + 2 * out_channels, out_channels, kernel_size=3, padding=1, stride=1,
-                              bias=False)
-        self.bn_out = nn.BatchNorm2d(out_channels)
-
-    def forward(self, x):
-        x1 = self.bn1(self.conv_3x3(x))
-        x1 = F.relu(x1, inplace=True)
-        x2 = self.bn2(self.conv_1x1(x))
-        x2 = F.relu(x2, inplace=True)
-        out = self.bn_out(self.cout(torch.cat([x, x1, x2], 1)))
-        return F.relu(out, inplace=True)
-
-
-class MXPConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, mxp_k=2, mxp_s=2, **kw):
-        super(MXPConv2d, self).__init__()
-        self.conv = BasicConv2d(in_channels, out_channels)
-        self.mx_k = mxp_k
-        self.mxp_s = mxp_s
-
-    def forward(self, x):
-        x = F.max_pool2d(x, kernel_size=self.mx_k, stride=self.mxp_s)
-        return self.conv(x)
-
-
-class UpConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, **kw):
-        super(UpConv2d, self).__init__()
-        self.conv_up = nn.ConvTranspose2d(in_channels, out_channels, **kw)
-        self.conv = BasicConv2d(out_channels, out_channels)
-
-    def forward(self, x):
-        x = self.conv_up(x)
-        return self.conv(x)
 
 
 class ConvBlock(nn.Module):
@@ -63,46 +20,68 @@ class ConvBlock(nn.Module):
 
 
 class COVDNet(nn.Module):
-    def __init__(self, in_ch, r):
+    def __init__(self, num_channels, reduce_by=1):
         super(COVDNet, self).__init__()
-        self.c1 = BasicConv2d(in_ch, r)
+        self.A1_ = ConvBlock(num_channels, int(64 / reduce_by))
+        self.A2_ = ConvBlock(int(64 / reduce_by), int(128 / reduce_by))
+        self.A3_ = ConvBlock(int(128 / reduce_by), int(256 / reduce_by))
 
-        self.c2 = MXPConv2d(r, 2 * r, kernel_size=3, padding=1)
-        self.c3 = MXPConv2d(2 * r, 4 * r, kernel_size=3, padding=1)
-        self.c4 = MXPConv2d(4 * r, 8 * r, kernel_size=3, padding=1)
+        self.A_mid = ConvBlock(int(256 / reduce_by), int(512 / reduce_by))
 
-        self.c5 = UpConv2d(8 * r, 4 * r, kernel_size=2, stride=2, padding=0)
-        self.c6 = UpConv2d(4 * r, 2 * r, kernel_size=2, stride=2, padding=0)
-        self.c7 = UpConv2d(2 * r, r, kernel_size=2, stride=2, padding=0)
+        self.A3_up = nn.ConvTranspose2d(int(512 / reduce_by), int(256 / reduce_by), kernel_size=2, stride=2)
+        self._A3 = ConvBlock(int(512 / reduce_by), int(256 / reduce_by))
 
-        self.c8 = MXPConv2d(2 * r, 4 * r, kernel_size=3, padding=1)
-        self.c9 = MXPConv2d(4 * r, 8 * r, kernel_size=3, padding=1)
-        self.c10 = MXPConv2d(8 * r, 16 * r, kernel_size=3, padding=1)
+        self.A2_up = nn.ConvTranspose2d(int(256 / reduce_by), int(128 / reduce_by), kernel_size=2, stride=2)
+        self._A2 = ConvBlock(int(256 / reduce_by), int(128 / reduce_by))
 
-        self.c11 = MXPConv2d(24 * r, 8 * r, kernel_size=3, padding=1)
-        self.c12 = MXPConv2d(8 * r, 4 * r, kernel_size=3, padding=1)
-        self.c13 = MXPConv2d(4 * r, r, kernel_size=3, padding=1)
-        self.flat_size = r * 5 * 3
+        self.A1_up = nn.ConvTranspose2d(int(128 / reduce_by), int(64 / reduce_by), kernel_size=2, stride=2)
+        self._A1 = ConvBlock(int(128 / reduce_by), int(64 / reduce_by))
+
+        self.enc1 = ConvBlock(int(64 / reduce_by), int(128 / reduce_by), p=0)
+        self.enc2 = ConvBlock(int(128 / reduce_by), int(256 / reduce_by), p=0)
+        self.enc3 = ConvBlock(int(256 / reduce_by), int(256 / reduce_by), p=0)
+        self.enc4 = ConvBlock(int(256 / reduce_by), int(512 / reduce_by), p=0)
+        self.enc5 = ConvBlock(int(512 / reduce_by), int(512 / reduce_by), p=0)
+        self.flat_size = int(512 / reduce_by) * 6 * 2
 
     def forward(self, x):
-        x1 = self.c1(x)
-        x = self.c2(x1)
-        x = self.c3(x)
-        x4 = self.c4(x)
+        a1_ = self.A1_(x)
+        a1_dwn = F.max_pool2d(a1_, kernel_size=2, stride=2)
 
-        x = self.c5(x4)
-        x = self.c6(x)
-        x7 = self.c7(x)
+        a2_ = self.A2_(a1_dwn)
+        a2_dwn = F.max_pool2d(a2_, kernel_size=2, stride=2)
 
-        x = self.c8(safe_concat(x1, x7))
-        x = self.c9(x)
-        x10 = self.c10(x)
+        a3_ = self.A3_(a2_dwn)
+        a3_dwn = F.max_pool2d(a3_, kernel_size=2, stride=2)
 
-        x = self.c11(safe_concat(x4, x10))
-        x = self.c12(x)
-        x = self.c13(x)
+        a_mid = self.A_mid(a3_dwn)
 
-        return x.view(x.size(0), -1)
+        a3_up = self.A3_up(a_mid)
+        _a3 = self._A3(safe_concat(a3_, a3_up))
+
+        a2_up = self.A2_up(_a3)
+        _a2 = self._A2(safe_concat(a2_, a2_up))
+
+        a1_up = self.A1_up(_a2)
+        _a1 = self._A1(safe_concat(a1_, a1_up))
+
+        _a1 = F.max_pool2d(_a1, kernel_size=2, stride=2)
+        _a1 = self.enc1(_a1)
+
+        _a1 = F.max_pool2d(_a1, kernel_size=2, stride=2)
+        _a1 = self.enc2(_a1)
+
+        _a1 = F.max_pool2d(_a1, kernel_size=2, stride=2)
+        _a1 = self.enc3(_a1)
+
+        _a1 = F.max_pool2d(_a1, kernel_size=2, stride=2)
+        _a1 = self.enc4(_a1)
+
+        _a1 = F.max_pool2d(_a1, kernel_size=2, stride=2)
+        _a1 = self.enc5(_a1)
+
+        _a1 = _a1.view(-1, self.flat_size)
+        return _a1
 
 
 class MultiLabelModule(nn.Module):
@@ -144,7 +123,7 @@ class BinaryLabelModule(nn.Module):
 class MultiLabel(nn.Module):
     def __init__(self, in_ch, r=8):
         super().__init__()
-        self.encoder = COVDNet(in_ch=in_ch, r=r)
+        self.encoder = COVDNet(num_channels=in_ch, reduce_by=r)
         self.multi = MultiLabelModule(self.encoder.flat_size)
 
     def forward(self, x):
@@ -155,7 +134,7 @@ class MultiLabel(nn.Module):
 class Binary(nn.Module):
     def __init__(self, in_ch, r=8):
         super().__init__()
-        self.encoder = COVDNet(in_ch=in_ch, r=r)
+        self.encoder = COVDNet(num_channels=in_ch, reduce_by=r)
         self.cls = BinaryLabelModule(self.encoder.flat_size)
 
     def forward(self, x):
@@ -168,11 +147,3 @@ def get_model(which, in_ch=2, r=4):
         return MultiLabel(in_ch, r)
     elif which == 'binary':
         return Binary(in_ch, r)
-
-#
-# m = get_model('multi_reg')
-# params_count = sum(p.numel() for p in m.parameters() if p.requires_grad)
-# print(params_count)
-# i = torch.randn((2, 2, 320, 192))
-# o = m(i)
-# print("Out shape:", o)

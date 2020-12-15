@@ -6,7 +6,7 @@ from easytorch import EasyTorch
 from classification import KernelDataset, KernelTrainer
 
 ap = argparse.ArgumentParser(parents=[ap], add_help=False)
-ap.add_argument('-wm', '--which_model', default='', type=str, help='Which model to load.')
+ap.add_argument('-wm', '--which_model', default='multi', type=str, help='Which model to load.')
 
 dataspecs = [dspec.V7CF_DATASET]
 runner = EasyTorch(ap, dataspecs)

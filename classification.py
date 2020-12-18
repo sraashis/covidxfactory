@@ -6,9 +6,9 @@ import torch
 import torch.nn.functional as F
 import torchvision.transforms as tmf
 from PIL import Image as IMG
-from easytorch.core.nn import ETTrainer, ETDataset
-from easytorch.utils.imageutils import Image
-from easytorch.utils.measurements import Prf1a
+from easytorch import ETTrainer
+from easytorch.data import ETDataset
+from easytorch.vision.imageutils import Image
 
 from models import get_model
 
@@ -18,8 +18,6 @@ sep = os.sep
 class KernelDataset(ETDataset):
     def __init__(self, **kw):
         super().__init__(**kw)
-        self.get_label = kw.get('label_getter')
-        self.get_mask = kw.get('mask_getter')
         self.labels = None
 
     def load_index(self, map_id, file):
@@ -106,17 +104,5 @@ class KernelTrainer(ETTrainer):
         sc.add(pred, labels[:, 2:3].squeeze())
         return loss, sc, out, pred
 
-    def new_metrics(self):
-        return Prf1a()
-
     def reset_dataset_cache(self):
-        self.cache['global_test_score'] = []
-        self.cache['monitor_metric'] = 'f1'
-        self.cache['metric_direction'] = 'maximize'
         self.cache['log_dir'] = self.cache['log_dir'] + '_' + self.args['which_model']
-
-    def reset_fold_cache(self):
-        self.cache['training_log'] = ['Loss,Precision,Recall,F1,Accuracy']
-        self.cache['validation_log'] = ['Loss,Precision,Recall,F1,Accuracy']
-        self.cache['test_score'] = ['Split,Precision,Recall,F1,Accuracy']
-        self.cache['best_score'] = 0.0

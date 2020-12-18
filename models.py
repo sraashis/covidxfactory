@@ -1,8 +1,6 @@
-import torch
 import torch.nn.functional as F
+from easytorch.utils.tensorutils import safe_concat
 from torch import nn
-import numpy as np
-from easytorch.core.utils import safe_concat
 
 
 class ConvBlock(nn.Module):

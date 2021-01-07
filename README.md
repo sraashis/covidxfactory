@@ -20,8 +20,8 @@ In most cases if there is COVID-19 present, there will also be Pneumonia.
 - **pip install easytorch**
 - For full datasets, please visit the original source links provided above and use the notebook NB.ipynb to download the complete ~6k images.
 ```commandline
-python main.py -ph train -b 32 -wm multi -nw 16 -e 71 -nch 1 -pat 11
-python main.py -ph train -b 32 -wm binary -nw 16 -e 71 -nch 1 -pat 11
+python main.py -ph train -b 32 -wm multi -nw 16 -ep 71 -nch 1 -pat 11
+python main.py -ph train -b 32 -wm binary -nw 16 -ep 71 -nch 1 -pat 11
 ```
 ### 10-fold cross validation results for multi-label classification:
 |SPLIT       |Precision|Recall|F1    |Accuracy|

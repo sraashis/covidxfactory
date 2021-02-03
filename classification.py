@@ -104,5 +104,5 @@ class KernelTrainer(ETTrainer):
         sc.add(pred, labels[:, 2:3].squeeze())
         return loss, sc, out, pred
 
-    def reset_dataset_cache(self):
+    def init_experiment_cache(self):
         self.cache['log_dir'] = self.cache['log_dir'] + '_' + self.args['which_model']

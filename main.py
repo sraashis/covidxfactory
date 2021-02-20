@@ -11,6 +11,8 @@ ap.add_argument('-wm', '--which_model', default='multi', type=str, help='Which m
 ap.add_argument('-sz', '--model_scale', default=1, type=int, help='Mode width scale')
 
 # --------------------------------------------------------------------------------------------
+
+
 V7CF_DATASET = {
     'name': 'v7_lab_cf',
     'data_dir': 'v7_lab_cf' + sep + 'images',
@@ -23,4 +25,4 @@ V7CF_DATASET = {
 runner = EasyTorch([V7CF_DATASET], ap, dataset_dir='datasets')
 
 if __name__ == "__main__":
-    runner.run(KernelDataset, KernelTrainer)
+    runner.run(KernelTrainer, KernelDataset)

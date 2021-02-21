@@ -22,7 +22,7 @@ V7CF_DATASET = {
     'label_getter': lambda file_name: file_name.split('.')[0] + '.png',
     'mask_getter': lambda file_name: file_name.split('.')[0] + '.png',
 }
-runner = EasyTorch([V7CF_DATASET], ap, dataset_dir='datasets')
+runner = EasyTorch([V7CF_DATASET], ap, dataset_dir='datasets', split_ratio=[0.6, 0.2, 0.2])
 
 if __name__ == "__main__":
     runner.run(KernelTrainer, KernelDataset)

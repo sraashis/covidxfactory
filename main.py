@@ -1,11 +1,11 @@
 import argparse
-from easytorch import EasyTorch, default_args
+from easytorch import EasyTorch, default_ap
 from classification import KernelDataset, KernelTrainer
 import os
 
 sep = os.sep
 
-ap = argparse.ArgumentParser(parents=[default_args], add_help=False)
+ap = argparse.ArgumentParser(parents=[default_ap], add_help=False)
 ap.add_argument("-nch", "--num_channel", default=3, type=int, help="Number of channels of input image.")
 ap.add_argument('-wm', '--which_model', default='multi', type=str, help='Which model to load.')
 ap.add_argument('-sz', '--model_scale', default=1, type=int, help='Mode width scale')

@@ -107,6 +107,7 @@ class KernelTrainer(ETTrainer):
     def init_experiment_cache(self):
         self.cache['log_dir'] = self.cache['log_dir'] + '_' + self.args['which_model']
         self.cache.update(monitor_metric='f1', metric_direction='maximize')
+        self.cache['log_header'] = 'loss|accuracy,f1,precision,recall'
 
     def new_metrics(self):
         return Prf1a()

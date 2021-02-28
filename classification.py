@@ -61,9 +61,6 @@ class KernelDataset(ETDataset):
 
 
 class KernelTrainer(ETTrainer):
-    def __init__(self, args):
-        super().__init__(args)
-
     def _init_nn_model(self):
         self.nn['model'] = get_model(self.args['which_model'], self.args['num_channel'], r=self.args['model_scale'])
 

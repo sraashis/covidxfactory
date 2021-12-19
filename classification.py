@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 import torchvision.transforms as tmf
 from PIL import Image as IMG
-from easytorch import ETTrainer, Prf1a
+from easytorch import ETTrainer, ETMeter, Prf1a
 from easytorch.data import ETDataset
 from easytorch.vision.imageutils import Image
 
@@ -98,7 +98,7 @@ class KernelTrainer(ETTrainer):
         out = F.softmax(out, 1)
         _, pred = torch.max(out, 1)
         sc = self.new_metrics()
-        sc.add(pred, labels[:, 2:3].squeeze())
+        sc.meter['prf1a'].add(pred, labels[:, 2:3].squeeze())
         return loss, sc, out, pred
 
     def init_experiment_cache(self):
@@ -106,5 +106,7 @@ class KernelTrainer(ETTrainer):
         self.cache.update(monitor_metric='f1', metric_direction='maximize')
         self.cache['log_header'] = 'loss|accuracy,f1,precision,recall'
 
-    def new_metrics(self):
-        return Prf1a()
+    def new_meter(self):
+        return ETMeter(
+            prf1a=Prf1a()
+        )
